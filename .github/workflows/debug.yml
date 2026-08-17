@@ -1,0 +1,75 @@
+name: Debug Scrape
+
+# Einmal-Diagnose: laedt das gerenderte HTML als Artefakt hoch, damit man
+# sieht, was der Runner tatsaechlich von UCI bekommt.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Dependencies
+        run: |
+          pip install playwright beautifulsoup4 requests
+          playwright install --with-deps chromium
+
+      - name: Wo steht der Runner
+        run: curl -s https://ipinfo.io/json || true
+
+      - name: Seite abrufen und dumpen
+        run: |
+          python - <<'PY'
+          from playwright.sync_api import sync_playwright
+          from pathlib import Path
+
+          URL = "https://www.uci-kinowelt.de/home/berlin-east-side-gallery"
+
+          with sync_playwright() as p:
+              b = p.chromium.launch(headless=True)
+              ctx = b.new_context(locale="de-DE", timezone_id="Europe/Berlin")
+              pg = ctx.new_page()
+              resp = pg.goto(URL, wait_until="domcontentloaded", timeout=60_000)
+              print("HTTP", resp.status if resp else "?")
+              print("URL nach Redirects:", pg.url)
+              print("Titel:", pg.title())
+
+              try:
+                  pg.click("#onetrust-accept-btn-handler", timeout=8000)
+                  print("Consent geklickt")
+              except Exception as e:
+                  print("Consent nicht geklickt:", type(e).__name__)
+
+              pg.wait_for_timeout(3000)
+              for _ in range(4):
+                  pg.mouse.wheel(0, 2000)
+                  pg.wait_for_timeout(600)
+
+              html = pg.content()
+              Path("runner_page.html").write_text(html, encoding="utf-8")
+              pg.screenshot(path="runner_page.png", full_page=True)
+
+              print("HTML-Laenge:", len(html))
+              for marker in ("badge-performance", "data-slide-filmid",
+                             "Odyssee", "407923", "captcha", "Access Denied",
+                             "Cloudflare", "cf-browser-verification"):
+                  print(f"  {marker!r:32} -> {marker in html}")
+              b.close()
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runner-dump
+          path: |
+            runner_page.html
+            runner_page.png
