@@ -1,0 +1,26 @@
+name: Keepalive
+
+# GitHub deaktiviert geplante Workflows in Repos, die 60 Tage keine Aktivitaet
+# hatten. Laeuft der Watcher lange ohne Fund, gibt es keinen Commit und der
+# Watcher schlaeft ein. Dieser Job schreibt daher monatlich einen Zeitstempel.
+
+on:
+  schedule:
+    - cron: "0 5 1 * *"        # am 1. jedes Monats
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          date -u +%Y-%m-%dT%H:%MZ > .keepalive
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .keepalive
+          git diff --staged --quiet || git commit -m "keepalive"
+          git push

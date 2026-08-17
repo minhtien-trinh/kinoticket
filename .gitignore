@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+uci_detail.html
+uci_dump/
+scratch_seen.json
+.venv/

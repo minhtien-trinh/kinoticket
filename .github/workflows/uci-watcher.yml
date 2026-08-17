@@ -1,0 +1,57 @@
+name: UCI Showtime Watcher
+
+on:
+  schedule:
+    - cron: "17 * * * *"      # stuendlich zur Minute 17 (UTC)
+  workflow_dispatch:           # manueller Trigger zum Testen
+
+permissions:
+  contents: write              # noetig, um seen.json zurueckzuschreiben
+
+concurrency:
+  group: uci-watcher
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Dependencies
+        run: |
+          pip install playwright beautifulsoup4 requests
+          playwright install --with-deps chromium
+
+      - name: Check showtimes
+        env:
+          STATE_PATH: ${{ github.workspace }}/state/seen.json
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          FILM_ID: "407923"
+          FILM_TITLE: "Die Odyssee"
+          FILTER_MODE: "imax-ov"
+        run: python uci_watcher_final.py
+
+      - name: State committen
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/seen.json
+          if git diff --staged --quiet; then
+            echo "Keine Aenderung am State."
+            exit 0
+          fi
+          git commit -m "state: $(date -u +%Y-%m-%dT%H:%MZ)"
+          # Bei parallelem Lauf kann der Remote weiter sein, daher rebasen.
+          git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+          git push
